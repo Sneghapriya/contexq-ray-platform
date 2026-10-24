@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import pyarrow as pa
+import numpy as np
 import ray
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import r2_score
@@ -43,18 +44,33 @@ class EntityResolver:
         for norm, cid in zip(df_a["norm"], df_a["canonical_id"]):
             blocks.setdefault(norm[:1], []).append((norm, cid))
 
-        next_id = len(df_a)
-        ids = []
-        for norm in df_b["norm"]:
+        # 1. Best S1 candidate for each S2 row
+        candidates = []   # (score, position in df_b, S1 canonical_id)
+        for b_pos, norm in enumerate(df_b["norm"]):
             best_id, best_score = None, 0.0
             for cand_norm, cid in blocks.get(norm[:1], []):
                 score = difflib.SequenceMatcher(None, norm, cand_norm).ratio()
                 if score > best_score:
                     best_id, best_score = cid, score
             if best_score >= 0.90:
-                ids.append(best_id)       # same company as an S1 record
+                candidates.append((best_score, b_pos, best_id))
+
+        # 2. One-to-one: highest scores claim their S1 record first
+        candidates.sort(reverse=True)
+        claimed, assigned = set(), {}
+        for score, b_pos, cid in candidates:
+            if cid not in claimed:
+                claimed.add(cid)
+                assigned[b_pos] = cid
+
+        # 3. Unmatched S2 rows are new companies
+        next_id = len(df_a)
+        ids = []
+        for b_pos in range(len(df_b)):
+            if b_pos in assigned:
+                ids.append(assigned[b_pos])
             else:
-                ids.append(next_id)       # new company, only in S2
+                ids.append(next_id)
                 next_id += 1
         df_b["canonical_id"] = ids
         return df_a.drop(columns="norm"), df_b.drop(columns="norm")
@@ -66,13 +82,14 @@ def train_model(df: pd.DataFrame):
         df[["employees", "num_suppliers", "founded_year", "industry", "country"]],
         columns=["industry", "country"],
     )
-    y = df["annual_revenue"]
+    y = np.log1p(df["annual_revenue"])
     X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42)
     model = GradientBoostingRegressor(random_state=42).fit(X_tr, y_tr)
     return r2_score(y_te, model.predict(X_te))
 
 
 def write_iceberg(df: pd.DataFrame):
+    df = df.drop_duplicates(subset="canonical_id")
     from pyiceberg.catalog.sql import SqlCatalog
     from pyiceberg.exceptions import NoSuchTableError
 
@@ -116,6 +133,15 @@ def run_pipeline():
     # 2. Entity resolution on the actor
     resolver = EntityResolver.remote()
     res_a, res_b = ray.get(resolver.resolve.remote(df_a, df_b))
+    truth = pd.read_csv(f"{DATA_DIR}/ground_truth.csv")
+    t1 = truth[truth.source == "S1"].set_index("row_id")["true_company_id"]
+    t2 = truth[truth.source == "S2"].set_index("row_id")["true_company_id"]
+    hit = res_b["canonical_id"] < len(res_a)               # S2 rows matched to an S1 row
+    predicted = res_b.loc[hit, "canonical_id"].map(t1).to_numpy()
+    actual = t2.reindex(res_b.index[hit]).to_numpy()
+    true_overlap = len(set(t1) & set(t2))
+    print(f"Resolver precision: {(predicted == actual).mean():.3f}; "
+          f"found {hit.sum()} of {true_overlap} true matches")
 
     # 3. Merge: same canonical_id means same company
     merged = res_a.merge(res_b.drop(columns="corporate_name"), on="canonical_id", how="inner")
@@ -123,7 +149,7 @@ def run_pipeline():
 
     # 4. Train
     r2 = train_model(merged)
-    print(f"Model trained. R2 on held-out data: {r2:.3f}")
+    print(f"Model trained. R2 (log revenue) on held-out data: {r2:.3f}")
 
     # 5. Iceberg upsert
     write_iceberg(merged)
