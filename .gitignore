@@ -2,6 +2,6 @@ warehouse/
 .terraform/
 *.tfstate
 *.tfstate.*
-*.tfvars
+.terraform.lock.hcl
 .ray/
 __pycache__/
