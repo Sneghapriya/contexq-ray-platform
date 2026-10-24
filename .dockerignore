@@ -1,0 +1,5 @@
+.git
+warehouse/
+.terraform/
+__pycache__/
+*.tfstate*
