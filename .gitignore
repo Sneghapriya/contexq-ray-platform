@@ -1,0 +1,7 @@
+warehouse/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+.ray/
+__pycache__/
