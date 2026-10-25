@@ -1,0 +1,51 @@
+name: terraform-plan
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform-plan.yml"
+
+permissions:
+  contents: read
+  id-token: write      # lets the job request a GitHub OIDC token
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive terraform/
+
+  plan:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        layer: [00-bootstrap, 01-network, 02-cluster]
+    env:
+      TF_VAR_project_id: ${{ vars.PROJECT_ID }}
+    defaults:
+      run:
+        working-directory: terraform/environments/dev/${{ matrix.layer }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.PLAN_SA }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - run: terraform init -input=false -backend-config="bucket=${{ vars.STATE_BUCKET }}"
+      - run: terraform validate
+
+      - name: Plan
+        run: |
+          terraform plan -input=false -lock=false -no-color | tee plan.txt
+          echo "### Plan for ${{ matrix.layer }}" >> "$GITHUB_STEP_SUMMARY"
+          tail -n 60 plan.txt >> "$GITHUB_STEP_SUMMARY"
