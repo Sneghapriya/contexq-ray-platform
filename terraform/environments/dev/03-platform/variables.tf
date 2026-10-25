@@ -18,3 +18,11 @@ variable "ksa_name" {
 variable "kuberay_version" {
   type = string
 }
+
+variable "monitoring_namespace" {
+  type = string
+}
+
+variable "monitoring_chart_version" {
+  type = string
+}

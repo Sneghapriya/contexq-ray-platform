@@ -88,19 +88,34 @@ def train_model(df: pd.DataFrame):
     return r2_score(y_te, model.predict(X_te))
 
 
-def write_iceberg(df: pd.DataFrame):
-    df = df.drop_duplicates(subset="canonical_id")
+def get_catalog():
     from pyiceberg.catalog.sql import SqlCatalog
+
+    if WAREHOUSE.startswith("gs://"):
+        # Cluster mode: Postgres catalog, table files in GCS
+        from urllib.parse import quote_plus
+        user = quote_plus(os.environ["CATALOG_USER"])
+        pwd = quote_plus(os.environ["CATALOG_PASSWORD"])
+        host = os.environ["CATALOG_HOST"]
+        db = os.environ["CATALOG_DB"]
+        uri = f"postgresql+psycopg2://{user}:{pwd}@{host}:5432/{db}"
+        return SqlCatalog("default", uri=uri, warehouse=WAREHOUSE)
+
+    # Local mode: SQLite catalog and a local folder
+    wh = Path(WAREHOUSE)
+    wh.mkdir(parents=True, exist_ok=True)
+    return SqlCatalog(
+        "default",
+        uri=f"sqlite:///{wh.resolve()}/catalog.db",
+        warehouse=wh.resolve().as_uri(),
+    )
+
+
+def write_iceberg(df: pd.DataFrame):
     from pyiceberg.exceptions import NoSuchTableError
 
-    wh = Path(WAREHOUSE)
-    if "://" not in WAREHOUSE:
-        wh.mkdir(parents=True, exist_ok=True)
-        warehouse_uri, catalog_uri = wh.resolve().as_uri(), f"sqlite:///{wh.resolve()}/catalog.db"
-    else:
-        raise NotImplementedError("Cloud catalog is configured on Day 4")
-
-    catalog = SqlCatalog("default", uri=catalog_uri, warehouse=warehouse_uri)
+    df = df.drop_duplicates(subset="canonical_id")
+    catalog = get_catalog()
     catalog.create_namespace_if_not_exists("corporate")
 
     arrow = pa.Table.from_pandas(df, preserve_index=False)

@@ -11,6 +11,12 @@ resource "google_storage_bucket_iam_member" "data" {
   member = "serviceAccount:${google_service_account.ray.email}"
 }
 
+resource "google_storage_bucket_iam_member" "data_bucket_reader" {
+  bucket = var.data_bucket
+  role   = "roles/storage.legacyBucketReader"
+  member = "serviceAccount:${google_service_account.ray.email}"
+}
+
 # The Kubernetes service account the pods use
 resource "kubernetes_service_account" "ray" {
   metadata {

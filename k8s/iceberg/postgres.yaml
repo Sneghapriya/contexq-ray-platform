@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: iceberg-catalog
+  namespace: ray
+spec:
+  selector:
+    app: iceberg-catalog
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: iceberg-catalog
+  namespace: ray
+spec:
+  serviceName: iceberg-catalog
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iceberg-catalog
+  template:
+    metadata:
+      labels:
+        app: iceberg-catalog
+    spec:
+      nodeSelector:
+        pool: system          # stable pool, never on Spot
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: iceberg-catalog   # POSTGRES_USER / DB / PASSWORD
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits:   { memory: 512Mi }
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "iceberg"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi

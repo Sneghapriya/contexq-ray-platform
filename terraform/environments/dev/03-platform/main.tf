@@ -14,6 +14,10 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 2.17"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 
   backend "gcs" {
@@ -70,4 +74,41 @@ module "workload_identity" {
   namespace   = module.kuberay.namespace
   ksa_name    = var.ksa_name
   data_bucket = "ray-platform-data"
+}
+
+resource "random_password" "catalog" {
+  length  = 24
+  special = false # keeps the connection URI simple
+}
+
+resource "kubernetes_secret" "iceberg_catalog" {
+  metadata {
+    name      = "iceberg-catalog"
+    namespace = module.kuberay.namespace
+  }
+  data = {
+    POSTGRES_USER     = "iceberg"
+    POSTGRES_DB       = "iceberg"
+    POSTGRES_PASSWORD = random_password.catalog.result
+  }
+}
+
+resource "google_secret_manager_secret" "llm_api_key" {
+  secret_id = "llm-api-key"
+
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_iam_member" "ray_reads_llm_key" {
+  secret_id = google_secret_manager_secret.llm_api_key.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${module.workload_identity.gsa_email}"
+}
+
+module "monitoring" {
+  source        = "../../../modules/monitoring"
+  namespace     = var.monitoring_namespace
+  chart_version = var.monitoring_chart_version
 }

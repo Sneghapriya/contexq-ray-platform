@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: ray-pods
+  namespace: ray
+spec:
+  selector:
+    matchExpressions:
+      - key: ray.io/node-type
+        operator: In
+        values: [head, worker]
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 15s
+  podTargetLabels:
+    - ray.io/cluster
+    - ray.io/node-type

@@ -9,7 +9,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
-COPY data/ ./data/
 
 # The pipeline reads these at runtime; the cluster overrides them later
 ENV DATA_DIR=/home/ray/app/data
