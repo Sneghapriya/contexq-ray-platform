@@ -18,8 +18,8 @@ resource "helm_release" "stack" {
   timeout    = 900
 
   values = [yamlencode({
-    defaultRules          = { create = false }
-    alertmanager          = { enabled = false }
+    defaultRules = { create = false }
+    alertmanager = { enabled = false }
     # GKE manages its control plane, so these cannot be scraped
     kubeControllerManager = { enabled = false }
     kubeScheduler         = { enabled = false }

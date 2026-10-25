@@ -9,7 +9,7 @@ terraform {
   }
 
   backend "gcs" {
-    prefix = "dev/01-network"   # bucket is passed at init time
+    prefix = "dev/01-network" # bucket is passed at init time
   }
 }
 

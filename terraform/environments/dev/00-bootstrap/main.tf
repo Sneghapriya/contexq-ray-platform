@@ -9,7 +9,7 @@ terraform {
   }
 
   backend "gcs" {
-    prefix = "00-bootstrap"   # bucket is passed at init time
+    prefix = "00-bootstrap" # bucket is passed at init time
   }
 }
 
@@ -24,7 +24,7 @@ resource "google_storage_bucket" "data" {
   location                    = var.region
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
-  force_destroy               = true   # demo project only
+  force_destroy               = true # demo project only
 
   versioning {
     enabled = true

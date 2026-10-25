@@ -8,7 +8,7 @@ resource "google_compute_subnetwork" "subnet" {
   region                   = var.region
   network                  = google_compute_network.vpc.id
   ip_cidr_range            = var.subnet_cidr
-  private_ip_google_access = true   # private nodes can reach Google APIs (GCS, Artifact Registry)
+  private_ip_google_access = true # private nodes can reach Google APIs (GCS, Artifact Registry)
 
   secondary_ip_range {
     range_name    = "pods"
