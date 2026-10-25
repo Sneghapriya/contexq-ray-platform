@@ -1,0 +1,77 @@
+apiVersion: ray.io/v1
+kind: RayJob
+metadata:
+  name: entity-resolution
+  namespace: ray
+spec:
+  entrypoint: python /home/ray/app/app/ray_pipeline.py
+  submissionMode: K8sJobMode
+  shutdownAfterJobFinishes: true
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 2                  # retry if a Spot node is reclaimed
+
+  rayClusterSpec:
+    rayVersion: "2.59.0"
+
+    headGroupSpec:
+      rayStartParams:
+        num-cpus: "0"              # head only coordinates; work goes to workers
+        dashboard-host: "0.0.0.0"
+      template:
+        spec:
+          serviceAccountName: ray-sa
+          nodeSelector:
+            pool: system           # stable on-demand pool
+          containers:
+            - name: ray-head
+              image: ${IMAGE}
+              env:
+                - name: DATA_DIR
+                  value: /home/ray/app/data
+                - name: ICEBERG_WAREHOUSE
+                  value: /tmp/warehouse
+                - name: PIN_RESOLVER
+                  value: "true"
+              resources:
+                requests: { cpu: "1", memory: 4Gi }
+                limits:   { cpu: "1", memory: 4Gi }
+              volumeMounts:
+                - { name: dshm, mountPath: /dev/shm }
+          volumes:
+            - name: dshm
+              emptyDir: { medium: Memory, sizeLimit: 1Gi }
+
+    workerGroupSpecs:
+      - groupName: resolver-workers
+        replicas: 1
+        minReplicas: 1
+        maxReplicas: 1
+        rayStartParams:
+          resources: '"{\"resolver\": 1}"'     # custom resource the actor asks for
+          object-store-memory: "1073741824"    # 1 GiB, backed by the shm volume
+        template:
+          spec:
+            serviceAccountName: ray-sa
+            nodeSelector:
+              pool: ray-worker                 # Spot pool
+            tolerations:
+              - key: ray-worker
+                operator: Equal
+                value: "true"
+                effect: NoSchedule
+            containers:
+              - name: ray-worker
+                image: ${IMAGE}
+                env:
+                  - name: DATA_DIR
+                    value: /home/ray/app/data
+                  - name: ICEBERG_WAREHOUSE
+                    value: /tmp/warehouse
+                resources:
+                  requests: { cpu: "2", memory: 6Gi }
+                  limits:   { cpu: "2", memory: 6Gi }
+                volumeMounts:
+                  - { name: dshm, mountPath: /dev/shm }
+            volumes:
+              - name: dshm
+                emptyDir: { medium: Memory, sizeLimit: 2Gi }

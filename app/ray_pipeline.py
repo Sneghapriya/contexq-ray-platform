@@ -131,7 +131,8 @@ def run_pipeline():
     print(f"Ingested {len(df_a)} rows (S1) and {len(df_b)} rows (S2)")
 
     # 2. Entity resolution on the actor
-    resolver = EntityResolver.remote()
+    opts = {"resources": {"resolver": 1}} if os.getenv("PIN_RESOLVER") == "true" else {}
+    resolver = EntityResolver.options(**opts).remote()
     res_a, res_b = ray.get(resolver.resolve.remote(df_a, df_b))
     truth = pd.read_csv(f"{DATA_DIR}/ground_truth.csv")
     t1 = truth[truth.source == "S1"].set_index("row_id")["true_company_id"]
