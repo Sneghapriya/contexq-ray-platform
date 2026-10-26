@@ -1,0 +1,84 @@
+name: build-and-deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "Dockerfile"
+      - "requirements.txt"
+      - "k8s/rayjob.yaml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: ray-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  REGION: asia-south1
+  CLUSTER: ray-dev-gke
+  ZONE: asia-south1-a
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+
+      - uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.CLUSTER }}
+          location: ${{ env.ZONE }}
+          project_id: ${{ vars.PROJECT_ID }}
+
+      - name: Build and push image
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${{ vars.PROJECT_ID }}/ray-images/ray-pipeline:${GITHUB_SHA}"
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Submit RayJob
+        run: |
+          JOB_NAME="entity-resolution-${GITHUB_RUN_NUMBER}"
+          echo "JOB_NAME=$JOB_NAME" >> "$GITHUB_ENV"
+          : "${IMAGE:?IMAGE is empty}"
+          kubectl delete rayjob -n ray -l app.kubernetes.io/part-of=ray-pipeline --ignore-not-found
+          JOB_NAME="$JOB_NAME" envsubst '${IMAGE} ${JOB_NAME}' < k8s/rayjob.yaml | kubectl apply -f -
+
+      - name: Wait for the job
+        run: |
+          for i in $(seq 1 120); do
+            JOB=$(kubectl get rayjob "$JOB_NAME" -n ray -o jsonpath='{.status.jobStatus}' 2>/dev/null || true)
+            DEP=$(kubectl get rayjob "$JOB_NAME" -n ray -o jsonpath='{.status.jobDeploymentStatus}' 2>/dev/null || true)
+            echo "[$i] jobStatus=${JOB:-none} deployment=${DEP:-none}"
+            case "$JOB" in
+              SUCCEEDED) exit 0 ;;
+              FAILED|STOPPED) exit 1 ;;
+            esac
+            [ "$DEP" = "Failed" ] && exit 1
+            sleep 15
+          done
+          echo "Timed out waiting for the job"
+          exit 1
+
+      - name: Show results
+        if: always()
+        run: |
+          kubectl get rayjob "$JOB_NAME" -n ray || true
+          kubectl logs -n ray -l job-name="$JOB_NAME" --tail=60 || true

@@ -1,8 +1,10 @@
 apiVersion: ray.io/v1
 kind: RayJob
 metadata:
-  name: entity-resolution
+  name: ${JOB_NAME}
   namespace: ray
+  labels:
+    app.kubernetes.io/part-of: ray-pipeline
 spec:
   entrypoint: python /home/ray/app/app/ray_pipeline.py
   submissionMode: K8sJobMode
