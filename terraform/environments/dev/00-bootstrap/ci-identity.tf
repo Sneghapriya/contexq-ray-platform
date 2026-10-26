@@ -42,7 +42,7 @@ resource "google_service_account_iam_member" "plan_wif" {
 resource "google_service_account_iam_member" "deploy_wif" {
   service_account_id = google_service_account.gha_deploy.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/subject/repo:${var.github_repo}:ref:refs/heads/main"
+  member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/subject/${var.github_deploy_subject}"
 }
 
 # Plan SA: read-only access

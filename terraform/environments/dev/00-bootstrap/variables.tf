@@ -17,3 +17,8 @@ variable "github_repo" {
 variable "state_bucket" {
   type = string
 }
+
+variable "github_deploy_subject" {
+  type        = string
+  description = "OIDC subject of the deploy workflow, as GitHub sends it"
+}
