@@ -30,6 +30,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Debug OIDC identity
+        run: |
+          echo "DEPLOY_SA=${{ vars.DEPLOY_SA }}"
+          echo "WIF_PROVIDER=${{ vars.WIF_PROVIDER }}"
+          python3 - <<'EOF'
+          import os, json, base64, urllib.request
+          req = urllib.request.Request(
+              os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"] + "&audience=debug",
+              headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
+          )
+          tok = json.load(urllib.request.urlopen(req))["value"]
+          p = tok.split(".")[1]
+          p += "=" * (-len(p) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(p))
+          print({k: claims.get(k) for k in ["sub", "repository", "ref", "environment", "event_name"]})
+          EOF
+          
+
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
